@@ -1,0 +1,66 @@
+services:
+  # ---------------------------------------------------------
+  # 1. STORAGE: MinIO (Local S3-Compatible Object Storage)
+  # ---------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: lakehouse-minio
+    ports:
+      - "9000:9000" # API Port (Spark talks to this)
+      - "9001:9001" # Web Console Port (You look at this)
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - lakehouse-net
+
+  # This temporary container auto-creates our buckets on startup
+  minio-init:
+    image: minio/mc:latest
+    container_name: lakehouse-minio-init
+    depends_on:
+      - minio
+    networks:
+      - lakehouse-net
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for MinIO...';
+      sleep 5;
+      mc alias set myminio http://minio:9000 admin password123;
+      mc mb myminio/raw-telemetry || true;
+      mc mb myminio/warehouse || true;
+      echo 'Buckets created successfully.';
+      exit 0;
+      "
+
+  # ---------------------------------------------------------
+  # 2. COMPUTE: Official Apache Spark (Master & Worker Nodes)
+  # ---------------------------------------------------------
+  spark-master:
+    image: apache/spark:3.5.1
+    container_name: lakehouse-spark-master
+    ports:
+      - "8080:8080" # Spark Master Web UI
+      - "7077:7077" # Spark Master RPC Port
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    networks:
+      - lakehouse-net
+
+  spark-worker:
+    image: apache/spark:3.5.1
+    container_name: lakehouse-spark-worker
+    depends_on:
+      - spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    networks:
+      - lakehouse-net
+
+networks:
+  lakehouse-net:
+    driver: bridge
+
+volumes:
+  minio_data:
