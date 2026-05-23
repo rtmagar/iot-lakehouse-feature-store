@@ -1,6 +1,6 @@
 import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, avg, max, count, when
+from pyspark.sql.functions import col, avg, max, count, when, current_timestamp
 
 # 1. Initialize Spark with Iceberg and MinIO (S3) capabilities
 print("Initializing PySpark Session and downloading Iceberg/MinIO drivers...")
@@ -37,7 +37,10 @@ feature_df = raw_df.groupBy("device_id").agg(
     avg("temperature_c").alias("avg_temperature_c"),
     max("vibration_hz").alias("peak_vibration_hz"),
     count(when(col("status") == "WARNING", True)).alias("anomaly_count")
-)
+).withColumn("event_timestamp", current_timestamp()) # <-- Added the required timestamp!
+
+print("\n--- Processed Feature Data ---")
+feature_df.show()
 
 print("\n--- Processed Feature Data ---")
 feature_df.show()
