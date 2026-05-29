@@ -54,34 +54,64 @@ graph TD
 
 ## How to Run Locally
 
-**1. Clone the repository**
+**1. Clone and Set Up the Environment**
 ```bash
+# Clone the repo
 git clone https://github.com/rtmagar/iot-lakehouse-feature-store.git
 cd iot-lakehouse-feature-store
+
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+
+# Install the required Python packages
+pip install pyspark feast pandas boto3 s3fs python-dotenv
 ```
-**2. Start the Infrastructure**
+**2. Start the Infrastructure**: Spin up the local MinIO (Storage) and Apache Spark (Compute) containers in the background.
 ```bash
 docker-compose up -d
 ```
-*Access MinIO at http://localhost:9001 and Spark UI at http://localhost:8080.*
+ __Verify MinIO__: *Open your browser to http://localhost:9001 (Username: admin, Password: password123) to view the raw and warehouse buckets.*
 
-**3. Generate IoT Telemetry**
+__Verify Spark__: *Open http://localhost:8080 to see the Spark Master UI.*
+
+
+**3. Configure Environment Variables**: To ensure the Python scripts and Feast can communicate with the local MinIO container instead of real AWS servers, configure your environment variables. 
+Navigate to the Feast directory and create a ```.env``` file:
 ```bash
+cd feature_repo/feature_repo
+touch .env
+```
+*Add the following exactly as written to your new ```.env``` file:*
+```bash
+export AWS_ACCESS_KEY_ID=admin
+export AWS_SECRET_ACCESS_KEY=password123
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ENDPOINT_URL=http://localhost:9000
+export S3_ENDPOINT_URL=http://localhost:9000
+```
+**Note:** *Run ```source .env``` in your terminal to load these variables before proceeding.*
+
+**4. Generate Mock IoT Telemetry (The Edge)**: Navigate back to the project root and start the edge device simulation. This script streams continuous JSON telemetry data (temperature, vibration) directly into the MinIO raw-telemetry bucket.
+```bash
+cd ../..
 python edge_sensors.py
 ```
-*Streams mock sensor data into the ```raw-telemetry``` bucket.*
 
-**4. Run the PySpark ETL**
+**5. Run the PySpark ETL Job**: Process the raw JSON data into an ACID-compliant Apache Iceberg table. This script aggregates the metrics, flags anomalies, adds a point-in-time timestamp, and saves it to the ```warehouse``` bucket.
 ```bash
 python lakehouse_etl.py
 ```
-*Processes the JSON, engineers ML features, and commits an ACID-compliant Iceberg table to the ```warehouse``` bucket.*
 
-**5. Serve Features for ML (Feast)**
+**6. Serve Features for Machine Learning (Feast)**
+Navigate back into the Feature Store directory. Apply the Feast configurations to build the SQLite registry, then run the handshake script to simulate a Data Scientist pulling AI-ready features.
 ```bash
 cd feature_repo/feature_repo
-source .env
+
+# Sync the infrastructure state
 feast apply
+
+# Retrieve historically accurate features as a Pandas DataFrame
 python test_workflow.py
 ```
-*Returns an AI-ready Pandas DataFrame with historically accurate features for predictive maintenance model training.*
+*If successful, your terminal will print a clean Pandas DataFrame containing ```avg_temperature_c```, ```peak_vibration_hz```, and ```anomaly_count``` perfectly aligned with an ```event_timestamp```!*
